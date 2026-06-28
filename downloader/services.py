@@ -42,12 +42,44 @@ def is_stream_url(url: str) -> bool:
     return any(path.endswith(ext) for ext in DIRECT_EXT)
 
 
-def _base_opts() -> dict:
+UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+
+
+def _friendly_error(exc: Exception) -> str:
+    msg = str(exc)
+    low = msg.lower()
+    if 'login required' in low or 'empty media' in low or 'not available' in low or 'instagram' in low:
+        return 'This link is blocked by the site (Instagram often needs login). Try YouTube or a direct .mp4 link.'
+    if 'rate-limit' in low:
+        return 'Too many requests. Wait a few minutes and try again.'
+    return msg[:600]
+
+
+def _ydl_extract(opts: dict, url: str, download: bool = False):
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        return ydl.extract_info(url, download=download)
+
+
+def _site_opts(url: str) -> dict:
+    u = url.lower()
+    headers = {'User-Agent': UA}
+    if 'instagram.com' in u:
+        headers['Referer'] = 'https://www.instagram.com/'
+    elif 'tiktok.com' in u:
+        headers['Referer'] = 'https://www.tiktok.com/'
+    return {'http_headers': headers}
+
+
+def _base_opts(url: str = '') -> dict:
     opts = {
         'quiet': True,
         'no_warnings': True,
         'restrictfilenames': False,
         'windowsfilenames': True,
+        'retries': 5,
+        'fragment_retries': 5,
+        'socket_timeout': 30,
+        **_site_opts(url),
     }
     if ffmpeg_available():
         opts['ffmpeg_location'] = get_ffmpeg_path()
@@ -82,9 +114,8 @@ def _sort_formats(formats: list) -> list:
 
 
 def get_media_info(url: str) -> dict:
-    opts = {**_base_opts(), 'extract_flat': False}
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    opts = {**_base_opts(url), 'extract_flat': False}
+    info = _ydl_extract(opts, url, download=False)
 
     formats = []
     seen = set()
@@ -200,7 +231,7 @@ def _build_opts(url, format_choice, live_from_start, job_id):
             update_job(job_id, phase='converting', percent=98, message=f'{label}...')
 
     opts = {
-        **_base_opts(),
+        **_base_opts(url),
         'format': fmt,
         'outtmpl': out,
         'merge_output_format': 'mp4',
@@ -221,8 +252,8 @@ def run_download_job(job_id: str, url: str, format_choice: str, live_from_start:
         update_job(job_id, status='running', phase='starting', message='Fetching media info...')
         opts, has_ffmpeg, fmt, mp3_out = _build_opts(url, format_choice, live_from_start, job_id)
 
+        info = _ydl_extract(opts, url, download=True)
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
             path = Path(ydl.prepare_filename(info))
             if mp3_out:
                 path = path.with_suffix('.mp3')
@@ -243,7 +274,8 @@ def run_download_job(job_id: str, url: str, format_choice: str, live_from_start:
             delete_at=delete_at,
         )
     except Exception as e:
-        update_job(job_id, status='error', phase='error', message=str(e), error=str(e))
+        err = _friendly_error(e)
+        update_job(job_id, status='error', phase='error', message=err, error=err)
 
 
 def start_download_job(url: str, format_choice: str, live_from_start: bool = False) -> str:

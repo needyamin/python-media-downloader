@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Media Downloader</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
   <div class="app">
@@ -18,7 +18,10 @@
     <section class="panel">
       <form id="form" class="url-form">
         {% csrf_token %}
-        <input type="url" id="url" placeholder="https://..." required autocomplete="off" enterkeyhint="go">
+        <div class="url-wrap">
+          <input type="text" id="url" placeholder="https://..." required autocomplete="off" inputmode="url" enterkeyhint="go">
+          <button type="button" id="btn-paste" class="btn-paste" title="Paste link">Paste</button>
+        </div>
         <button type="submit" id="btn-info" class="btn primary">Get Info</button>
       </form>
       <div id="error" class="alert error hidden"></div>
@@ -74,6 +77,6 @@
 
     <footer class="footer">Educational use only · Files auto-delete after 10 min · <a href="/admin/" style="color:#93c5fd">Admin</a></footer>
   </div>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>

@@ -53,6 +53,21 @@ Files save to `downloads/` and auto-delete from the server after 10 minutes.
 | File retention | `FILE_RETENTION_SECONDS` | `600` (10 min) |
 | Secret key | `SECRET_KEY` env | change in production |
 
+## Why some links fail
+
+Sites like Instagram, Netflix, or private posts **block automated downloads on purpose**:
+
+- **Copyright** — they control who can save media
+- **Login walls** — video URL is hidden until you sign in
+- **Anti-bot** — servers detect tools (not a real browser) and refuse
+- **Rate limits** — too many requests from one IP
+
+This is enforced **on their server**, not in this app. No downloader can guarantee every site.
+
+**What usually works:** YouTube, TikTok public posts, direct `.mp4` / `.m3u8` links, open streams.
+
+**If a link fails:** try a **public** URL, a **direct file link**, or `pip install -U yt-dlp`.
+
 ## Third-party tools
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) — media extraction (subject to its own license)

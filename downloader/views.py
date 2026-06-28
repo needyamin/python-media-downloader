@@ -7,7 +7,7 @@ from django.http import FileResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
-from .services import ffmpeg_available, get_media_info, start_download_job
+from .services import ffmpeg_available, get_media_info, start_download_job, _friendly_error
 from .tasks import get_job
 
 
@@ -24,7 +24,7 @@ def get_info(request):
             return JsonResponse({'error': 'URL required'}, status=400)
         return JsonResponse(get_media_info(url))
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'error': _friendly_error(e)}, status=400)
 
 
 @require_http_methods(['POST'])
@@ -39,7 +39,7 @@ def download(request):
         task_id = start_download_job(url, fmt, live_from_start)
         return JsonResponse({'task_id': task_id})
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=400)
+        return JsonResponse({'error': _friendly_error(e)}, status=400)
 
 
 @require_http_methods(['GET'])

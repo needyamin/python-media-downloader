@@ -114,7 +114,9 @@ $('#form').addEventListener('submit', async (e) => {
   hideError();
   $('#result').classList.add('hidden');
   $('#progress-panel').classList.add('hidden');
-  currentUrl = $('#url').value.trim();
+  currentUrl = normalizeUrl($('#url').value);
+  if (!currentUrl) { showError('Enter a valid URL'); return; }
+  $('#url').value = currentUrl;
   const btn = $('#btn-info');
   btn.disabled = true;
   btn.textContent = 'Loading...';
@@ -184,3 +186,42 @@ $('#btn-video-fmt').addEventListener('click', () => {
 });
 
 $('#btn-audio-fmt').addEventListener('click', () => doDownload($('#audio-formats').value));
+
+function normalizeUrl(raw) {
+  let s = (raw || '').trim();
+  if (!s) return '';
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  return s;
+}
+
+function setUrlInput(raw) {
+  const s = normalizeUrl(raw);
+  if (!s) return false;
+  $('#url').value = s;
+  hideError();
+  return true;
+}
+
+async function pasteLink() {
+  const input = $('#url');
+  try {
+    if (navigator.clipboard?.readText) {
+      const text = await navigator.clipboard.readText();
+      if (setUrlInput(text)) {
+        input.focus();
+        return;
+      }
+    }
+  } catch { /* fallback below */ }
+
+  input.focus();
+  input.select();
+  const onPaste = (e) => {
+    const text = e.clipboardData?.getData('text');
+    if (text && setUrlInput(text)) e.preventDefault();
+  };
+  input.addEventListener('paste', onPaste, { once: true });
+  showError('Press Ctrl+V to paste your link');
+}
+
+$('#btn-paste').addEventListener('click', pasteLink);

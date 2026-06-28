@@ -49,6 +49,36 @@ body {
 
 .url-form { display: flex; flex-direction: column; gap: .6rem; }
 
+.url-wrap { position: relative; width: 100%; }
+
+.url-wrap input[type="text"] {
+  width: 100%;
+  min-height: var(--touch);
+  padding: .75rem 5.5rem .75rem 1rem;
+  font-size: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.btn-paste {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-height: 36px;
+  padding: .4rem .75rem;
+  font-size: .85rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #334155;
+  color: #fff;
+  cursor: pointer;
+}
+.btn-paste:hover { background: #475569; }
+
 input[type="url"], select {
   width: 100%;
   min-height: var(--touch);
