@@ -14,6 +14,12 @@ if _env.exists():
 SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-change-in-production')
 DEBUG = os.environ.get('DEBUG', 'True').lower() in ('1', 'true', 'yes')
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get('ALLOWED_HOSTS', '*').split(',') if h.strip()]
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()
+]
+if not CSRF_TRUSTED_ORIGINS and ALLOWED_HOSTS != ['*']:
+    CSRF_TRUSTED_ORIGINS = [f'https://{h}' for h in ALLOWED_HOSTS]
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 INSTALLED_APPS = [
     'django.contrib.contenttypes',

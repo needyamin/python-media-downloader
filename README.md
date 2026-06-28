@@ -33,23 +33,28 @@ pip install -r requirements.txt
 python manage.py runserver
 ```
 
-## Setup (live server — auto)
+## Setup (live server — CloudPanel + Cloudflare)
+
+Cloudflare tunnel → `http://localhost:8092` → this app.
 
 ```bash
 chmod +x setup.sh start.sh
-./setup.sh
-./start.sh
+sudo ./setup.sh
 ```
 
-`setup.sh` will: create venv, install deps, generate `.env`, collect static, create `downloads/`.
+Defaults:
+- Domain: `download.needyamin.site`
+- Port: `8092` on `127.0.0.1`
+- Auto-start on boot (systemd when run as root)
 
-Production with systemd: `./setup.sh --systemd`
+Cloudflare tunnel config:
+```yaml
+ingress:
+  - hostname: download.needyamin.site
+    service: http://localhost:8092
+```
 
-**Admin code** is printed during setup and stored in `.env` as `ADMIN_CODE`.
-
-Open http://YOUR_SERVER_IP:8000
-
-## Usage
+## Setup (local)
 
 1. Paste a URL
 2. Click **Get Info**

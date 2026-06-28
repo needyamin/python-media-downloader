@@ -2,90 +2,121 @@
 set -e
 
 cd "$(dirname "$0")"
-ROOT="$(pwd)"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+chmod +x setup.sh start.sh 2>/dev/null || true
+
+DOMAIN="${DOMAIN:-download.needyamin.site}"
+PORT="${PORT:-8092}"
+BIND="${BIND:-127.0.0.1}"
 
 echo "=== Media Downloader Setup ==="
+echo "Domain: $DOMAIN | Port: $BIND:$PORT (Cloudflare tunnel)"
 
-# Python
 if ! command -v python3 &>/dev/null; then
-  echo "Error: python3 not found. Install Python 3.10+ first."
+  echo "Error: python3 not found."
   exit 1
 fi
 
-# Venv (recreate if broken or uploaded from Windows)
 if [ ! -f "venv/bin/activate" ]; then
-  echo "[1/6] Creating virtual environment..."
+  echo "[1/7] Creating virtual environment..."
   rm -rf venv
   python3 -m venv venv
 else
-  echo "[1/6] Virtual environment OK."
+  echo "[1/7] Virtual environment OK."
 fi
 
 source venv/bin/activate
 
-echo "[2/6] Installing dependencies..."
+echo "[2/7] Installing dependencies..."
 pip install -q --upgrade pip
 pip install -q -r requirements.txt
 pip install -q -U yt-dlp
 
-# Allow port 80 without root (optional)
-if [ -f "venv/bin/gunicorn" ] && command -v setcap &>/dev/null; then
-  setcap 'cap_net_bind_service=+ep' venv/bin/gunicorn 2>/dev/null || true
-fi
+set_env() {
+  local key="$1" val="$2"
+  if [ -f .env ] && grep -q "^${key}=" .env; then
+    sed -i "s|^${key}=.*|${key}=${val}|" .env
+  else
+    echo "${key}=${val}" >> .env
+  fi
+}
 
-# .env
+echo "[3/7] Configuring .env ..."
 if [ ! -f ".env" ]; then
-  echo "[3/6] Creating .env ..."
   SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
   ADMIN=$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")
-  read -p "Domain (ALLOWED_HOSTS, e.g. example.com or *): " DOMAIN
-  DOMAIN=${DOMAIN:-*}
   cat > .env <<EOF
 SECRET_KEY=$SECRET
 DEBUG=False
 ALLOWED_HOSTS=$DOMAIN
+CSRF_TRUSTED_ORIGINS=https://$DOMAIN
 ADMIN_CODE=$ADMIN
-PORT=80
+PORT=$PORT
+BIND=$BIND
 EOF
-  echo "  Admin code saved in .env: $ADMIN"
+  echo "  Admin code: $ADMIN"
 else
-  echo "[3/6] .env already exists — skipping."
+  set_env ALLOWED_HOSTS "$DOMAIN"
+  set_env CSRF_TRUSTED_ORIGINS "https://$DOMAIN"
+  set_env PORT "$PORT"
+  set_env BIND "$BIND"
+  grep -q '^SECRET_KEY=' .env || set_env SECRET_KEY "$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")"
 fi
 
-echo "[4/6] Creating folders..."
+echo "[4/7] Creating folders..."
 mkdir -p downloads staticfiles
 chmod 755 downloads
 
-echo "[5/6] Collecting static files..."
+echo "[5/7] Collecting static files..."
 python manage.py collectstatic --noinput
 
-echo "[6/6] Done."
+install_systemd() {
+  if [ "$(id -u)" = "0" ]; then
+    SVC_USER="root"
+    SVC_GROUP="root"
+  else
+    SVC_USER=$(stat -c '%U' "$ROOT")
+    SVC_GROUP=$(stat -c '%G' "$ROOT")
+  fi
 
-# systemd (optional)
-if [ "$1" = "--systemd" ] && command -v systemctl &>/dev/null; then
-  SERVICE="/etc/systemd/system/downloader.service"
-  echo "Installing systemd service..."
-  sudo tee "$SERVICE" > /dev/null <<EOF
+  echo "[6/7] Installing systemd service (auto-start on boot)..."
+  tee /etc/systemd/system/downloader.service > /dev/null <<EOF
 [Unit]
-Description=Media Downloader
-After=network.target
+Description=Media Downloader ($DOMAIN)
+After=network.target cloudflared.service
 
 [Service]
-User=${SUDO_USER:-$USER}
+Type=simple
+User=$SVC_USER
+Group=$SVC_GROUP
 WorkingDirectory=$ROOT
-EnvironmentFile=$ROOT/.env
-ExecStart=$ROOT/venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:80 --workers 2 --timeout 300
+EnvironmentFile=-$ROOT/.env
+ExecStart=/bin/bash $ROOT/start.sh
 Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
 EOF
-  sudo systemctl daemon-reload
-  sudo systemctl enable downloader
-  sudo systemctl restart downloader
-  echo "Service running: sudo systemctl status downloader"
-else
+
+  systemctl daemon-reload
+  systemctl reset-failed downloader 2>/dev/null || true
+  systemctl enable downloader
+  systemctl restart downloader
+  sleep 2
+  systemctl status downloader --no-pager || true
   echo ""
-  echo "Start now:  ./start.sh"
-  echo "Production:   ./setup.sh --systemd"
+  echo "Live: https://$DOMAIN"
+  echo "Tunnel target: http://$BIND:$PORT"
+}
+
+echo "[6/7] Skipping systemd (run as root for auto-start)."
+if command -v systemctl &>/dev/null && [ "$(id -u)" = "0" ]; then
+  install_systemd
+fi
+
+echo "[7/7] Done."
+if [ "$(id -u)" != "0" ]; then
+  echo "Manual start: ./start.sh"
+  echo "Auto-start:   sudo ./setup.sh"
 fi
