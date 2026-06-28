@@ -48,7 +48,7 @@ if [ ! -f ".env" ]; then
   cat > .env <<EOF
 SECRET_KEY=$SECRET
 DEBUG=False
-ALLOWED_HOSTS=$DOMAIN
+ALLOWED_HOSTS=$DOMAIN,127.0.0.1,localhost
 CSRF_TRUSTED_ORIGINS=https://$DOMAIN
 ADMIN_CODE=$ADMIN
 PORT=$PORT
@@ -56,7 +56,7 @@ BIND=$BIND
 EOF
   echo "  Admin code: $ADMIN"
 else
-  set_env ALLOWED_HOSTS "$DOMAIN"
+  set_env ALLOWED_HOSTS "$DOMAIN,127.0.0.1,localhost"
   set_env CSRF_TRUSTED_ORIGINS "https://$DOMAIN"
   set_env PORT "$PORT"
   set_env BIND "$BIND"
