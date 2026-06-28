@@ -1,11 +1,9 @@
-import json
 import logging
 import re
 import shutil
 import threading
-import zipfile
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
 from django.conf import settings
@@ -168,22 +166,70 @@ def _is_playlist(info: dict) -> bool:
     return bool(entries and len(entries) > 1)
 
 
-def _playlist_count(info: dict) -> int:
-    n = info.get('playlist_count')
-    if n:
-        return int(n)
-    entries = info.get('entries') or []
-    return len([e for e in entries if e])
+
+def _youtube_video_id(url: str) -> str | None:
+    u = url.lower()
+    if 'youtu.be/' in u:
+        return urlparse(url).path.strip('/').split('/')[0] or None
+    q = parse_qs(urlparse(url).query)
+    return (q.get('v') or [None])[0]
 
 
-def _first_entry_url(info: dict) -> str | None:
-    for e in info.get('entries') or []:
+def _entry_url(e: dict) -> str | None:
+    if not e:
+        return None
+    return e.get('url') or e.get('webpage_url') or (
+        f'https://www.youtube.com/watch?v={e["id"]}' if e.get('id') else None
+    )
+
+
+def _build_entries(info: dict) -> list:
+    out = []
+    for i, e in enumerate(info.get('entries') or [], 1):
         if not e:
             continue
-        return e.get('url') or e.get('webpage_url') or (
-            f'https://www.youtube.com/watch?v={e["id"]}' if e.get('id') else None
-        )
-    return None
+        url = _entry_url(e)
+        if not url:
+            continue
+        thumbs = e.get('thumbnails') or []
+        thumb = thumbs[0].get('url') if thumbs else None
+        out.append({
+            'index': i,
+            'id': e.get('id') or '',
+            'title': e.get('title') or f'Video {i}',
+            'url': url,
+            'thumbnail': e.get('thumbnail') or thumb,
+            'duration': e.get('duration'),
+        })
+    return out
+
+
+def _single_video_info(url: str, info: dict | None = None) -> dict:
+    if info is None:
+        opts = {**_base_opts(url), 'skip_download': True, 'noplaylist': True}
+        info = _ydl_extract(opts, url, download=False)
+
+    formats = _formats_from_info(info)
+    if not formats:
+        formats = [{'format_id': 'best', 'kind': 'video', 'height': 0, 'abr': 0, 'ext': 'mp4', 'label': 'Best available'}]
+    is_live = bool(info.get('is_live'))
+    is_stream = is_stream_url(url) or info.get('protocol') in ('m3u8', 'm3u8_native', 'http_dash_segments')
+
+    return {
+        'title': info.get('title', 'Stream' if is_stream else 'Unknown'),
+        'thumbnail': info.get('thumbnail'),
+        'duration': info.get('duration'),
+        'formats': formats,
+        'is_live': is_live,
+        'is_stream': is_stream,
+        'is_playlist': False,
+        'entry_count': 0,
+        'entries': [],
+        'selected_url': url,
+        'ffmpeg': ffmpeg_available(),
+        'note': _info_note(is_live, is_stream, ffmpeg_available()),
+    }
+
 
 
 def _formats_from_info(info: dict) -> list:
@@ -229,60 +275,43 @@ def _sort_formats(formats: list) -> list:
     return videos[:15] + audios[:15]
 
 
-def get_media_info(url: str) -> dict:
+def get_media_info(url: str, video_url: str | None = None) -> dict:
     url = url.strip()
     if not url:
         raise ValueError('URL required')
+
+    if video_url:
+        return _single_video_info(video_url.strip())
+
     opts = {**_base_opts(url), 'extract_flat': 'in_playlist', 'skip_download': True}
     info = _ydl_extract(opts, url, download=False)
 
-    is_playlist = _is_playlist(info)
-    entry_count = _playlist_count(info) if is_playlist else 0
+    if not _is_playlist(info):
+        return _single_video_info(url, info)
 
-    if is_playlist:
-        sample_url = _first_entry_url(info)
-        if sample_url:
-            sample_opts = {**_base_opts(sample_url), 'skip_download': True, 'noplaylist': True}
-            try:
-                sample = _ydl_extract(sample_opts, sample_url, download=False)
-                formats = _formats_from_info(sample)
-            except Exception:
-                formats = [{'format_id': 'best', 'kind': 'video', 'height': 0, 'abr': 0, 'ext': 'mp4', 'label': 'Best available'}]
-        else:
-            formats = [{'format_id': 'best', 'kind': 'video', 'height': 0, 'abr': 0, 'ext': 'mp4', 'label': 'Best available'}]
-        title = info.get('title') or 'Playlist'
-        thumb = info.get('thumbnail') or (info.get('entries') or [{}])[0].get('thumbnail')
-        note = f'Playlist · {entry_count} videos · downloads as ZIP · Files auto-delete after 10 minutes'
-        return {
-            'title': title,
-            'thumbnail': thumb,
-            'duration': None,
-            'formats': formats,
-            'is_live': False,
-            'is_stream': False,
-            'is_playlist': True,
-            'entry_count': entry_count,
-            'ffmpeg': ffmpeg_available(),
-            'note': note,
-        }
+    entries = _build_entries(info)
+    if not entries:
+        raise ValueError('Playlist is empty or unavailable')
 
-    formats = _formats_from_info(info)
-    if not formats:
-        formats = [{'format_id': 'best', 'kind': 'video', 'height': 0, 'abr': 0, 'ext': 'mp4', 'label': 'Best available'}]
-    is_live = bool(info.get('is_live'))
-    is_stream = is_stream_url(url) or info.get('protocol') in ('m3u8', 'm3u8_native', 'http_dash_segments')
+    vid = _youtube_video_id(url)
+    selected_url = None
+    if vid:
+        for e in entries:
+            if e['id'] == vid or f'v={vid}' in e['url']:
+                selected_url = e['url']
+                break
+    if not selected_url:
+        selected_url = entries[0]['url']
 
+    video = _single_video_info(selected_url)
     return {
-        'title': info.get('title', 'Stream' if is_stream else 'Unknown'),
-        'thumbnail': info.get('thumbnail'),
-        'duration': info.get('duration'),
-        'formats': formats,
-        'is_live': is_live,
-        'is_stream': is_stream,
-        'is_playlist': False,
-        'entry_count': 0,
-        'ffmpeg': ffmpeg_available(),
-        'note': _info_note(is_live, is_stream, ffmpeg_available()),
+        **video,
+        'is_playlist': True,
+        'playlist_title': info.get('title') or 'Playlist',
+        'entry_count': len(entries),
+        'entries': entries,
+        'selected_url': selected_url,
+        'note': f'Playlist · {len(entries)} videos · pick one to download',
     }
 
 
@@ -298,14 +327,9 @@ def _info_note(is_live, is_stream, has_ffmpeg) -> str:
     return ' · '.join(parts)
 
 
-def _build_opts(url, format_choice, live_from_start, job_id, is_playlist=False):
+def _build_opts(url, format_choice, live_from_start, job_id):
     settings.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    if is_playlist:
-        job_dir = settings.DOWNLOAD_DIR / job_id
-        job_dir.mkdir(parents=True, exist_ok=True)
-        out = str(job_dir / '%(playlist_index)02d - %(title)s.%(ext)s')
-    else:
-        out = str(settings.DOWNLOAD_DIR / '%(title)s.%(ext)s')
+    out = str(settings.DOWNLOAD_DIR / '%(title)s.%(ext)s')
     has_ffmpeg = ffmpeg_available()
 
     post = []
@@ -338,14 +362,7 @@ def _build_opts(url, format_choice, live_from_start, job_id, is_playlist=False):
             total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
             done = d.get('downloaded_bytes', 0)
             pct = round(done / total * 100, 1) if total else 0
-            idict = d.get('info_dict') or {}
-            idx, ptotal = idict.get('playlist_index'), idict.get('playlist_count')
-            if idx and ptotal:
-                msg = f'Downloading video {idx}/{ptotal}...'
-            elif live_from_start or not total:
-                msg = 'Recording live stream...' if live_from_start else 'Downloading...'
-            else:
-                msg = 'Downloading...'
+            msg = 'Recording live stream...' if live_from_start and not total else 'Downloading...'
             if not total and done:
                 msg = f'{msg} {done // 1_000_000} MB'
             update_job(job_id,
@@ -377,54 +394,29 @@ def _build_opts(url, format_choice, live_from_start, job_id, is_playlist=False):
         'concurrent_fragment_downloads': 4,
         'progress_hooks': [progress_hook],
         'postprocessor_hooks': [postprocessor_hook],
-        'ignoreerrors': is_playlist,
+        'noplaylist': True,
     }
     if not has_ffmpeg:
         opts.pop('merge_output_format', None)
-    return opts, has_ffmpeg, format_choice, mp3_out, is_playlist
-
-
-def _zip_folder(folder: Path, zip_path: Path):
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for f in sorted(folder.iterdir()):
-            if f.is_file():
-                zf.write(f, f.name)
+    return opts, has_ffmpeg, format_choice, mp3_out
 
 
 def run_download_job(job_id: str, url: str, format_choice: str, live_from_start: bool = False):
     try:
         update_job(job_id, status='running', phase='starting', message='Fetching media info...')
-        flat_opts = {**_base_opts(url), 'extract_flat': 'in_playlist', 'skip_download': True}
-        meta = _ydl_extract(flat_opts, url, download=False)
-        is_playlist = _is_playlist(meta)
-
-        opts, has_ffmpeg, fmt, mp3_out, is_playlist = _build_opts(
-            url, format_choice, live_from_start, job_id, is_playlist
-        )
+        opts, has_ffmpeg, fmt, mp3_out = _build_opts(url, format_choice, live_from_start, job_id)
 
         info = _ydl_extract(opts, url, download=True)
-
-        if is_playlist:
-            job_dir = settings.DOWNLOAD_DIR / job_id
-            files = [f for f in job_dir.iterdir() if f.is_file()]
-            if not files:
-                raise ValueError('Playlist download failed — no files saved')
-            zip_path = settings.DOWNLOAD_DIR / f'{job_id}.zip'
-            update_job(job_id, phase='processing', percent=95, message='Creating ZIP...')
-            _zip_folder(job_dir, zip_path)
-            shutil.rmtree(job_dir, ignore_errors=True)
-            path = zip_path
-        else:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                path = Path(ydl.prepare_filename(info))
-                if mp3_out:
-                    path = path.with_suffix('.mp3')
-                elif has_ffmpeg and (fmt == 'video' or '+' in str(fmt)):
-                    path = path.with_suffix('.mp4')
-                if not path.exists():
-                    matches = list(settings.DOWNLOAD_DIR.glob(f"{path.stem}*"))
-                    if matches:
-                        path = max(matches, key=lambda p: p.stat().st_mtime)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            path = Path(ydl.prepare_filename(info))
+            if mp3_out:
+                path = path.with_suffix('.mp3')
+            elif has_ffmpeg and (fmt == 'video' or '+' in str(fmt)):
+                path = path.with_suffix('.mp4')
+            if not path.exists():
+                matches = list(settings.DOWNLOAD_DIR.glob(f"{path.stem}*"))
+                if matches:
+                    path = max(matches, key=lambda p: p.stat().st_mtime)
 
         delete_at = schedule_delete(path)
         update_job(job_id,

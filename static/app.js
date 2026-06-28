@@ -1,6 +1,8 @@
 const $ = (s) => document.querySelector(s);
 let currentUrl = '';
 let pollTimer = null;
+let playlistEntries = [];
+let selectedUrl = '';
 
 const PHASE = {
   starting: 'Preparing',
@@ -60,6 +62,79 @@ function setBadges(info) {
   el.innerHTML = tags.join('');
 }
 
+function fillFormats(selectId, formats) {
+  const sel = $(selectId);
+  sel.innerHTML = formats.map(f => `<option value="${f.format_id}">${f.label}</option>`).join('');
+  if (formats.length) sel.selectedIndex = 0;
+}
+
+function showVideoPanel(info) {
+  currentUrl = info.selected_url || currentUrl;
+  selectedUrl = currentUrl;
+  $('#title').textContent = info.title;
+  const thumb = $('#thumb');
+  if (info.thumbnail) {
+    thumb.src = info.thumbnail;
+    thumb.classList.remove('hidden');
+  } else {
+    thumb.classList.add('hidden');
+  }
+  setBadges(info);
+  $('#note').textContent = info.note || '';
+  $('#note').classList.toggle('hidden', !info.note);
+  $('#live-opt').classList.toggle('hidden', !info.is_live);
+  document.querySelector('.stream-only')?.classList.toggle('hidden', !info.is_stream);
+
+  const videos = (info.formats || []).filter(f => f.kind === 'video');
+  const audios = (info.formats || []).filter(f => f.kind === 'audio');
+  fillFormats('#video-formats', videos);
+  fillFormats('#audio-formats', audios);
+  $('#video-fmt-box').classList.toggle('hidden', !videos.length);
+  $('#audio-fmt-box').classList.toggle('hidden', !audios.length);
+  $('#quality-box').classList.toggle('hidden', !videos.length && !audios.length);
+
+  document.querySelectorAll('.playlist-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.url === selectedUrl);
+  });
+}
+
+function renderPlaylist(info) {
+  const box = $('#playlist-box');
+  if (!info.is_playlist || !info.entries?.length) {
+    box.classList.add('hidden');
+    playlistEntries = [];
+    return;
+  }
+  playlistEntries = info.entries;
+  $('#playlist-heading').textContent = info.playlist_title || 'Playlist';
+  const list = $('#playlist-list');
+  list.innerHTML = info.entries.map(e => `
+    <li class="playlist-item${e.url === info.selected_url ? ' active' : ''}" data-url="${e.url}">
+      ${e.thumbnail ? `<img src="${e.thumbnail}" alt="" class="pl-thumb">` : ''}
+      <span class="pl-num">${e.index}</span>
+      <span class="pl-title">${e.title}${e.duration ? ` · ${fmtTime(e.duration)}` : ''}</span>
+    </li>
+  `).join('');
+  box.classList.remove('hidden');
+  list.querySelectorAll('.playlist-item').forEach(el => {
+    el.addEventListener('click', () => selectPlaylistVideo(el.dataset.url));
+  });
+}
+
+async function selectPlaylistVideo(url) {
+  if (!url || url === selectedUrl) return;
+  hideError();
+  document.querySelectorAll('.playlist-item').forEach(b => b.classList.add('loading'));
+  try {
+    const info = await post('/info/', { url, video_url: url });
+    showVideoPanel(info);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    document.querySelectorAll('.playlist-item').forEach(b => b.classList.remove('loading'));
+  }
+}
+
 function setProgress(job) {
   $('#progress-panel').classList.remove('hidden');
   $('#phase-label').textContent = PHASE[job.phase] || job.phase;
@@ -105,17 +180,12 @@ async function pollStatus(taskId) {
   }
 }
 
-function fillFormats(selectId, formats) {
-  const sel = $(selectId);
-  sel.innerHTML = formats.map(f => `<option value="${f.format_id}">${f.label}</option>`).join('');
-  if (formats.length) sel.selectedIndex = 0;
-}
-
 $('#form').addEventListener('submit', async (e) => {
   e.preventDefault();
   hideError();
   $('#result').classList.add('hidden');
   $('#progress-panel').classList.add('hidden');
+  playlistEntries = [];
   currentUrl = normalizeUrl($('#url').value);
   if (!currentUrl) { showError('Enter a valid URL'); return; }
   $('#url').value = currentUrl;
@@ -124,35 +194,8 @@ $('#form').addEventListener('submit', async (e) => {
   btn.textContent = 'Loading...';
   try {
     const info = await post('/info/', { url: currentUrl });
-    $('#title').textContent = info.title;
-    const thumb = $('#thumb');
-    if (info.thumbnail) {
-      thumb.src = info.thumbnail;
-      thumb.classList.remove('hidden');
-    } else {
-      thumb.classList.add('hidden');
-    }
-    setBadges(info);
-    $('#note').textContent = info.note || '';
-    $('#note').classList.toggle('hidden', !info.note);
-    $('#live-opt').classList.toggle('hidden', !info.is_live);
-    document.querySelector('.stream-only')?.classList.toggle('hidden', !info.is_stream);
-    if (info.is_playlist) {
-      document.querySelector('.btn.dl.video').textContent = 'Download Playlist (MP4)';
-      document.querySelector('.btn.dl.audio').textContent = 'Download Playlist (MP3)';
-    } else {
-      document.querySelector('.btn.dl.video').textContent = 'Video (MP4)';
-      $('#btn-audio').textContent = 'Audio (MP3)';
-    }
-
-    const videos = (info.formats || []).filter(f => f.kind === 'video');
-    const audios = (info.formats || []).filter(f => f.kind === 'audio');
-    fillFormats('#video-formats', videos);
-    fillFormats('#audio-formats', audios);
-    $('#video-fmt-box').classList.toggle('hidden', !videos.length);
-    $('#audio-fmt-box').classList.toggle('hidden', !audios.length);
-    $('#quality-box').classList.toggle('hidden', !videos.length && !audios.length);
-
+    renderPlaylist(info);
+    showVideoPanel(info);
     $('#result').classList.remove('hidden');
     $('#result').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
@@ -164,6 +207,7 @@ $('#form').addEventListener('submit', async (e) => {
 });
 
 async function doDownload(fmt) {
+  if (!currentUrl) { showError('Select a video first'); return; }
   hideError();
   $('#done-box').classList.add('hidden');
   $('#progress-panel').classList.remove('hidden');

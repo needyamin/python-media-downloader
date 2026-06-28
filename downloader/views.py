@@ -36,7 +36,8 @@ def get_info(request):
         url = (data.get('url') or '').strip()
         if not url:
             return JsonResponse({'error': 'URL required'}, status=400)
-        return JsonResponse(get_media_info(url))
+        video_url = (data.get('video_url') or '').strip() or None
+        return JsonResponse(get_media_info(url, video_url=video_url))
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid request'}, status=400)
     except Exception as e:

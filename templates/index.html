@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Media Downloader</title>
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=9">
 </head>
 <body>
   <div class="app">
@@ -28,7 +28,13 @@
     </section>
 
     <section id="result" class="panel hidden">
-      <div class="media">
+      <div id="playlist-box" class="playlist hidden">
+        <h3 id="playlist-heading"></h3>
+        <p class="hint">Tap a video to select it for download</p>
+        <ul id="playlist-list" class="playlist-list"></ul>
+      </div>
+
+      <div id="video-panel" class="media">
         <img id="thumb" class="thumb hidden" alt="">
         <div class="media-body">
           <h2 id="title"></h2>
@@ -77,6 +83,6 @@
 
     <footer class="footer">Educational use only · Files auto-delete after 10 min · <a href="/admin/" style="color:#93c5fd">Admin</a></footer>
   </div>
-  <script src="/static/app.js?v=11"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>
