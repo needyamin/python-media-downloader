@@ -12,12 +12,13 @@ if ! command -v python3 &>/dev/null; then
   exit 1
 fi
 
-# Venv
-if [ ! -d "venv" ]; then
+# Venv (recreate if broken or uploaded from Windows)
+if [ ! -f "venv/bin/activate" ]; then
   echo "[1/6] Creating virtual environment..."
+  rm -rf venv
   python3 -m venv venv
 else
-  echo "[1/6] Virtual environment exists."
+  echo "[1/6] Virtual environment OK."
 fi
 
 source venv/bin/activate

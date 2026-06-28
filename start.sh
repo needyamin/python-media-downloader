@@ -1,7 +1,7 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
-if [ ! -d "venv" ]; then
+if [ ! -f "venv/bin/activate" ]; then
   echo "Run ./setup.sh first"
   exit 1
 fi
