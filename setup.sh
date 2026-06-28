@@ -28,6 +28,11 @@ pip install -q --upgrade pip
 pip install -q -r requirements.txt
 pip install -q -U yt-dlp
 
+# Allow port 80 without root (optional)
+if [ -f "venv/bin/gunicorn" ] && command -v setcap &>/dev/null; then
+  setcap 'cap_net_bind_service=+ep' venv/bin/gunicorn 2>/dev/null || true
+fi
+
 # .env
 if [ ! -f ".env" ]; then
   echo "[3/6] Creating .env ..."
@@ -40,6 +45,7 @@ SECRET_KEY=$SECRET
 DEBUG=False
 ALLOWED_HOSTS=$DOMAIN
 ADMIN_CODE=$ADMIN
+PORT=80
 EOF
   echo "  Admin code saved in .env: $ADMIN"
 else
@@ -68,7 +74,7 @@ After=network.target
 User=${SUDO_USER:-$USER}
 WorkingDirectory=$ROOT
 EnvironmentFile=$ROOT/.env
-ExecStart=$ROOT/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 300
+ExecStart=$ROOT/venv/bin/gunicorn config.wsgi:application --bind 0.0.0.0:80 --workers 2 --timeout 300
 Restart=always
 
 [Install]
