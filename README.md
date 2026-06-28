@@ -26,16 +26,28 @@ This project is licensed under the [MIT License](LICENSE), with the educational-
 - Python 3.10+
 - FFmpeg — auto-included via `imageio-ffmpeg` (or use system FFmpeg)
 
-## Setup
+## Setup (local)
 
 ```bash
 pip install -r requirements.txt
 python manage.py runserver
 ```
 
-Open http://127.0.0.1:8000
+## Setup (live server — auto)
 
-**Admin:** http://127.0.0.1:8000/admin/ — default code in `config/settings.py` (`ADMIN_CODE`)
+```bash
+chmod +x setup.sh start.sh
+./setup.sh
+./start.sh
+```
+
+`setup.sh` will: create venv, install deps, generate `.env`, collect static, create `downloads/`.
+
+Production with systemd: `./setup.sh --systemd`
+
+**Admin code** is printed during setup and stored in `.env` as `ADMIN_CODE`.
+
+Open http://YOUR_SERVER_IP:8000
 
 ## Usage
 
@@ -75,3 +87,110 @@ This is enforced **on their server**, not in this app. No downloader can guarant
 - [Django](https://www.djangoproject.com/)
 
 Use of those tools may be subject to additional terms and laws.
+
+## Deploy on live server (VPS / Linux)
+
+Quick: upload code → `chmod +x setup.sh start.sh` → `./setup.sh` → `./start.sh`
+
+Manual steps below if you prefer.
+
+```bash
+cd /var/www/downloader-python
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install -U yt-dlp
+```
+
+### 3. Environment variables
+
+```bash
+export SECRET_KEY="your-long-random-secret-key"
+export DEBUG="False"
+export ALLOWED_HOSTS="yourdomain.com,www.yourdomain.com"
+export ADMIN_CODE="your-strong-admin-code"
+```
+
+Or create a `.env` file and load it in your service (do not commit `.env`).
+
+### 4. Collect static files
+
+```bash
+python manage.py collectstatic --noinput
+mkdir -p downloads
+chmod 755 downloads
+```
+
+### 5. Test run
+
+```bash
+gunicorn config.wsgi:application --bind 127.0.0.1:8000
+```
+
+Open `http://SERVER_IP:8000` (if firewall allows). Stop with Ctrl+C.
+
+### 6. Run forever with systemd
+
+Create `/etc/systemd/system/downloader.service`:
+
+```ini
+[Unit]
+Description=Media Downloader
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/downloader-python
+Environment="SECRET_KEY=your-secret"
+Environment="DEBUG=False"
+Environment="ALLOWED_HOSTS=yourdomain.com"
+Environment="ADMIN_CODE=your-admin-code"
+ExecStart=/var/www/downloader-python/venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --timeout 300
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable downloader
+sudo systemctl start downloader
+sudo systemctl status downloader
+```
+
+### 7. Nginx reverse proxy (recommended)
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 300s;
+        client_max_body_size 50M;
+    }
+}
+```
+
+Enable SSL with Certbot: `sudo certbot --nginx -d yourdomain.com`
+
+### 8. Shared hosting (cPanel)
+
+Many shared hosts **cannot** run this (no long-running Python, no yt-dlp/ffmpeg). You need a **VPS** or cloud server (DigitalOcean, Hetzner, AWS EC2, etc.).
+
+### Checklist
+
+| Item | Notes |
+|------|-------|
+| `DEBUG=False` | Required on live |
+| `ALLOWED_HOSTS` | Your domain name |
+| `SECRET_KEY` | Random string |
+| `ADMIN_CODE` | Change from default |
+| `downloads/` | Writable folder |
+| Port 8000 or Nginx | Public access |
+| `pip install -U yt-dlp` | Keep updated on server |
