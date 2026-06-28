@@ -32,6 +32,17 @@ pip install -q --upgrade pip
 pip install -q -r requirements.txt
 pip install -q -U yt-dlp
 
+echo "[2b/7] yt-dlp version: $(yt-dlp --version 2>/dev/null || echo unknown)"
+
+echo "[2c/7] Installing Deno (required for YouTube & many sites)..."
+if ! command -v deno &>/dev/null; then
+  curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh 2>/dev/null \
+    || curl -fsSL https://deno.land/install.sh | sh
+  export PATH="/usr/local/bin:$HOME/.deno/bin:$PATH"
+  ln -sf "$HOME/.deno/bin/deno" /usr/local/bin/deno 2>/dev/null || true
+fi
+echo "  deno: $(deno --version 2>/dev/null | head -1 || echo 'not found — install manually')"
+
 set_env() {
   local key="$1" val="$2"
   if [ -f .env ] && grep -q "^${key}=" .env; then
@@ -79,6 +90,9 @@ install_systemd() {
     SVC_GROUP=$(stat -c '%G' "$ROOT")
   fi
 
+  DENO_PATH="/usr/local/bin"
+  [ -x "$HOME/.deno/bin/deno" ] && DENO_PATH="$HOME/.deno/bin:/usr/local/bin"
+
   echo "[6/7] Installing systemd service (auto-start on boot)..."
   tee /etc/systemd/system/downloader.service > /dev/null <<EOF
 [Unit]
@@ -91,6 +105,7 @@ User=$SVC_USER
 Group=$SVC_GROUP
 WorkingDirectory=$ROOT
 EnvironmentFile=-$ROOT/.env
+Environment=PATH=$DENO_PATH:/usr/bin:/bin
 ExecStart=/bin/bash $ROOT/start.sh
 Restart=always
 RestartSec=5

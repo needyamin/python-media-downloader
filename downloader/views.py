@@ -5,9 +5,10 @@ from urllib.parse import quote
 from django.conf import settings
 from django.http import FileResponse, JsonResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from .services import ffmpeg_available, get_media_info, start_download_job, _friendly_error
+from .services import ffmpeg_available, get_media_info, start_download_job, _friendly_error, _deno_available
 from .tasks import get_job
 
 
@@ -15,18 +16,34 @@ def index(request):
     return render(request, 'index.html', {'ffmpeg': ffmpeg_available()})
 
 
+@csrf_exempt
+@require_http_methods(['GET'])
+def health(request):
+    import yt_dlp
+    return JsonResponse({
+        'ok': True,
+        'ffmpeg': ffmpeg_available(),
+        'deno': _deno_available(),
+        'yt_dlp': yt_dlp.version.__version__,
+    })
+
+
+@csrf_exempt
 @require_http_methods(['POST'])
 def get_info(request):
     try:
-        data = json.loads(request.body)
-        url = data.get('url', '').strip()
+        data = json.loads(request.body or '{}')
+        url = (data.get('url') or '').strip()
         if not url:
             return JsonResponse({'error': 'URL required'}, status=400)
         return JsonResponse(get_media_info(url))
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid request'}, status=400)
     except Exception as e:
         return JsonResponse({'error': _friendly_error(e)}, status=400)
 
 
+@csrf_exempt
 @require_http_methods(['POST'])
 def download(request):
     try:

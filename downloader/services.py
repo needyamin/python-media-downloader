@@ -1,3 +1,6 @@
+import json
+import logging
+import re
 import shutil
 import threading
 from pathlib import Path
@@ -8,6 +11,8 @@ from django.conf import settings
 
 from .tasks import schedule_delete, update_job
 
+logger = logging.getLogger(__name__)
+
 STREAM_HINTS = ('.m3u8', '.mpd', '/hls/', 'playlist', 'manifest', '.m3u8?')
 DIRECT_EXT = ('.mp4', '.webm', '.mkv', '.ts', '.mp3', '.m4a', '.aac', '.flv')
 
@@ -16,6 +21,23 @@ PP_LABELS = {
     'FFmpegMerger': 'Merging video + audio',
     'FFmpegVideoConvertor': 'Converting video',
     'FFmpegMetadata': 'Adding metadata',
+}
+
+UA = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+)
+
+REFERRERS = {
+    'youtube.com': 'https://www.youtube.com/',
+    'youtu.be': 'https://www.youtube.com/',
+    'instagram.com': 'https://www.instagram.com/',
+    'tiktok.com': 'https://www.tiktok.com/',
+    'facebook.com': 'https://www.facebook.com/',
+    'fb.watch': 'https://www.facebook.com/',
+    'twitter.com': 'https://twitter.com/',
+    'x.com': 'https://x.com/',
+    'reddit.com': 'https://www.reddit.com/',
 }
 
 
@@ -42,32 +64,26 @@ def is_stream_url(url: str) -> bool:
     return any(path.endswith(ext) for ext in DIRECT_EXT)
 
 
-UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-
-
-def _friendly_error(exc: Exception) -> str:
-    msg = str(exc)
-    low = msg.lower()
-    if 'login required' in low or 'empty media' in low or 'not available' in low or 'instagram' in low:
-        return 'This link is blocked by the site (Instagram often needs login). Try YouTube or a direct .mp4 link.'
-    if 'rate-limit' in low:
-        return 'Too many requests. Wait a few minutes and try again.'
-    return msg[:600]
-
-
-def _ydl_extract(opts: dict, url: str, download: bool = False):
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        return ydl.extract_info(url, download=download)
-
-
-def _site_opts(url: str) -> dict:
+def _referer(url: str) -> str:
     u = url.lower()
-    headers = {'User-Agent': UA}
-    if 'instagram.com' in u:
-        headers['Referer'] = 'https://www.instagram.com/'
-    elif 'tiktok.com' in u:
-        headers['Referer'] = 'https://www.tiktok.com/'
-    return {'http_headers': headers}
+    for key, ref in REFERRERS.items():
+        if key in u:
+            return ref
+    return urlparse(url).scheme + '://' + urlparse(url).netloc + '/'
+
+
+def _extractor_args(url: str) -> dict:
+    u = url.lower()
+    args = {}
+    if 'youtube.com' in u or 'youtu.be' in u:
+        args['youtube'] = {'player_client': ['android', 'web', 'ios']}
+    if 'tiktok.com' in u:
+        args['tiktok'] = {'api_hostname': 'api.tiktokv.com'}
+    return args
+
+
+def _deno_available() -> bool:
+    return shutil.which('deno') is not None
 
 
 def _base_opts(url: str = '') -> dict:
@@ -76,14 +92,57 @@ def _base_opts(url: str = '') -> dict:
         'no_warnings': True,
         'restrictfilenames': False,
         'windowsfilenames': True,
-        'retries': 5,
-        'fragment_retries': 5,
-        'socket_timeout': 30,
-        **_site_opts(url),
+        'retries': 10,
+        'fragment_retries': 10,
+        'socket_timeout': 60,
+        'geo_bypass': True,
+        'nocheckcertificate': True,
+        'http_headers': {
+            'User-Agent': UA,
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': _referer(url) if url else 'https://www.google.com/',
+        },
     }
+    ext = _extractor_args(url)
+    if ext:
+        opts['extractor_args'] = ext
+    if _deno_available():
+        opts['js_runtimes'] = {'deno': {}}
     if ffmpeg_available():
         opts['ffmpeg_location'] = get_ffmpeg_path()
     return opts
+
+
+def _friendly_error(exc: Exception) -> str:
+    msg = str(exc).strip()
+    low = msg.lower()
+    if 'sign in' in low or 'login' in low or 'empty media' in low:
+        return 'Site blocked this link (login required). Try a public URL or direct .mp4 link.'
+    if 'rate' in low and 'limit' in low:
+        return 'Rate limited. Wait a few minutes and try again.'
+    if 'deno' in low or 'node' in low or 'javascript' in low:
+        return 'Server needs Deno for downloads. Run: sudo ./setup.sh'
+    if 'unable to extract' in low or 'unsupported url' in low:
+        return 'Could not read this URL. Check the link or try a direct video file URL.'
+    return msg[:500] if msg else 'Download failed. Try another link.'
+
+
+def _ydl_extract(opts: dict, url: str, download: bool = False):
+    attempts = [opts]
+    u = url.lower()
+    if 'youtube.com' in u or 'youtu.be' in u:
+        fb = {**opts, 'extractor_args': {'youtube': {'player_client': ['android']}}}
+        attempts.append(fb)
+
+    last_err = None
+    for o in attempts:
+        try:
+            with yt_dlp.YoutubeDL(o) as ydl:
+                return ydl.extract_info(url, download=download)
+        except Exception as e:
+            last_err = e
+            logger.warning('yt-dlp failed: %s', e)
+    raise last_err
 
 
 def _fmt_speed(bps) -> str:
@@ -114,7 +173,10 @@ def _sort_formats(formats: list) -> list:
 
 
 def get_media_info(url: str) -> dict:
-    opts = {**_base_opts(url), 'extract_flat': False}
+    url = url.strip()
+    if not url:
+        raise ValueError('URL required')
+    opts = {**_base_opts(url), 'extract_flat': False, 'skip_download': True}
     info = _ydl_extract(opts, url, download=False)
 
     formats = []
@@ -146,7 +208,8 @@ def get_media_info(url: str) -> dict:
         })
 
     formats = _sort_formats(formats)
-
+    if not formats:
+        formats = [{'format_id': 'best', 'kind': 'video', 'height': 0, 'abr': 0, 'ext': 'mp4', 'label': 'Best available'}]
     is_live = bool(info.get('is_live'))
     is_stream = is_stream_url(url) or info.get('protocol') in ('m3u8', 'm3u8_native', 'http_dash_segments')
 
@@ -167,10 +230,10 @@ def _info_note(is_live, is_stream, has_ffmpeg) -> str:
     if is_live:
         parts.append('Live stream — records until stream ends')
     elif is_stream:
-        parts.append('Stream URL (HLS/DASH/direct) supported')
+        parts.append('Stream URL supported')
     if not has_ffmpeg:
-        parts.append('FFmpeg not found — install for merge/MP3 convert')
-    parts.append('Files auto-delete from server after 10 minutes')
+        parts.append('FFmpeg missing — run setup.sh')
+    parts.append('Files auto-delete after 10 minutes')
     return ' · '.join(parts)
 
 

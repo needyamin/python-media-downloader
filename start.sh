@@ -16,5 +16,6 @@ if [ -f ".env" ]; then
 fi
 
 BIND=${BIND:-0.0.0.0}
+export PATH="/usr/local/bin:$HOME/.deno/bin:$PATH"
 PORT=${PORT:-8092}
 exec gunicorn config.wsgi:application --bind "${BIND}:${PORT}" --workers 2 --timeout 300

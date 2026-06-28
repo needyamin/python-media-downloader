@@ -34,11 +34,12 @@ async function post(url, body) {
     body: JSON.stringify(body),
   });
   const text = await r.text();
-  let data;
+  let data = null;
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error('Server error — refresh and try again');
+    const snippet = text.slice(0, 120).replace(/<[^>]+>/g, ' ');
+    throw new Error(snippet || `Server error (${r.status})`);
   }
   if (!r.ok) throw new Error(data.error || 'Request failed');
   return data;

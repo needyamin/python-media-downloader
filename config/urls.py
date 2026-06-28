@@ -1,10 +1,12 @@
 from django.urls import path
+from django.views.decorators.csrf import csrf_exempt
 from downloader import views, admin_views
 
 urlpatterns = [
     path('', views.index, name='index'),
-    path('info/', views.get_info, name='info'),
-    path('download/', views.download, name='download'),
+    path('health/', csrf_exempt(views.health), name='health'),
+    path('info/', csrf_exempt(views.get_info), name='info'),
+    path('download/', csrf_exempt(views.download), name='download'),
     path('status/<str:task_id>/', views.job_status, name='job_status'),
     path('file/<str:task_id>/', views.serve_file, name='serve_file'),
     path('admin/', admin_views.admin_login, name='admin_login'),
