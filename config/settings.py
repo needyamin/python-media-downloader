@@ -59,4 +59,4 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 DOWNLOAD_DIR = BASE_DIR / 'downloads'
 FILE_RETENTION_SECONDS = 600
-ADMIN_CODE = os.environ.get('ADMIN_CODE', 'Yamin143')  # change this
+ADMIN_CODE = os.environ.get('ADMIN_CODE', 'Yamin143').strip()

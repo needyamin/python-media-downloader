@@ -55,7 +55,7 @@ set_env() {
 echo "[3/7] Configuring .env ..."
 if [ ! -f ".env" ]; then
   SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
-  ADMIN=$(python3 -c "import secrets; print(secrets.token_urlsafe(12))")
+  ADMIN="${ADMIN_CODE:-Yamin143}"
   cat > .env <<EOF
 SECRET_KEY=$SECRET
 DEBUG=False
@@ -72,6 +72,8 @@ else
   set_env PORT "$PORT"
   set_env BIND "$BIND"
   grep -q '^SECRET_KEY=' .env || set_env SECRET_KEY "$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")"
+  grep -q '^ADMIN_CODE=' .env || set_env ADMIN_CODE "Yamin143"
+  echo "  Admin code: $(grep '^ADMIN_CODE=' .env | cut -d= -f2-)"
 fi
 
 echo "[4/7] Creating folders..."
