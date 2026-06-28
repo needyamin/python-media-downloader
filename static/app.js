@@ -55,6 +55,7 @@ function setBadges(info) {
   const tags = [];
   if (info.duration) tags.push(`<span class="badge">${fmtTime(info.duration)}</span>`);
   if (info.is_live) tags.push('<span class="badge live">LIVE</span>');
+  if (info.is_playlist) tags.push(`<span class="badge">Playlist · ${info.entry_count || '?'}</span>`);
   if (info.is_stream) tags.push('<span class="badge">Stream</span>');
   el.innerHTML = tags.join('');
 }
@@ -136,7 +137,13 @@ $('#form').addEventListener('submit', async (e) => {
     $('#note').classList.toggle('hidden', !info.note);
     $('#live-opt').classList.toggle('hidden', !info.is_live);
     document.querySelector('.stream-only')?.classList.toggle('hidden', !info.is_stream);
-    $('#btn-audio').textContent = 'Audio (MP3)';
+    if (info.is_playlist) {
+      document.querySelector('.btn.dl.video').textContent = 'Download Playlist (MP4)';
+      document.querySelector('.btn.dl.audio').textContent = 'Download Playlist (MP3)';
+    } else {
+      document.querySelector('.btn.dl.video').textContent = 'Video (MP4)';
+      $('#btn-audio').textContent = 'Audio (MP3)';
+    }
 
     const videos = (info.formats || []).filter(f => f.kind === 'video');
     const audios = (info.formats || []).filter(f => f.kind === 'audio');
