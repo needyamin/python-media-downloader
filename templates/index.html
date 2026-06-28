@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Media Downloader</title>
+  <link rel="stylesheet" href="/static/style.css?v=4">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Media Downloader</h1>
+      <p>Paste any link — video, audio, or live stream</p>
+    </header>
+
+    {% if not ffmpeg %}<p class="alert warn">Run <code>pip install -r requirements.txt</code> for full features</p>{% endif %}
+
+    <section class="panel">
+      <form id="form" class="url-form">
+        {% csrf_token %}
+        <input type="url" id="url" placeholder="https://..." required autocomplete="off" enterkeyhint="go">
+        <button type="submit" id="btn-info" class="btn primary">Get Info</button>
+      </form>
+      <div id="error" class="alert error hidden"></div>
+    </section>
+
+    <section id="result" class="panel hidden">
+      <div class="media">
+        <img id="thumb" class="thumb hidden" alt="">
+        <div class="media-body">
+          <h2 id="title"></h2>
+          <div id="badges" class="badges"></div>
+          <p id="note" class="hint hidden"></p>
+          <label id="live-opt" class="check hidden">
+            <input type="checkbox" id="live-start"> Start from beginning
+          </label>
+        </div>
+      </div>
+
+      <div class="quick-btns">
+        <button data-fmt="video" class="btn dl video">Video (MP4)</button>
+        <button data-fmt="audio" class="btn dl audio" id="btn-audio">Audio (MP3)</button>
+        <button data-fmt="best" class="btn dl stream stream-only hidden">Stream</button>
+      </div>
+
+      <details id="quality-box" class="quality hidden">
+        <summary>More quality options</summary>
+        <div id="video-fmt-box" class="fmt-row hidden">
+          <label for="video-formats">Video</label>
+          <select id="video-formats"></select>
+          <button id="btn-video-fmt" class="btn dl sm">Download</button>
+        </div>
+        <div id="audio-fmt-box" class="fmt-row hidden">
+          <label for="audio-formats">Audio</label>
+          <select id="audio-formats"></select>
+          <button id="btn-audio-fmt" class="btn dl sm">Download</button>
+        </div>
+      </details>
+    </section>
+
+    <section id="progress-panel" class="panel progress hidden">
+      <div class="progress-top">
+        <span id="phase-label">Starting</span>
+        <span id="percent-label">0%</span>
+      </div>
+      <div class="bar"><div id="bar-fill"></div></div>
+      <p id="progress-msg" class="progress-msg"></p>
+      <p id="progress-meta" class="hint"></p>
+      <div id="done-box" class="done hidden">
+        <a id="dl-link" class="btn primary full" href="#">Save to device</a>
+        <p id="expire-note" class="hint center"></p>
+      </div>
+    </section>
+
+    <footer class="footer">Educational use only · Files auto-delete after 10 min · <a href="/admin/" style="color:#93c5fd">Admin</a></footer>
+  </div>
+  <script src="/static/app.js?v=5"></script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin</title>
+  <link rel="stylesheet" href="/static/style.css?v=4">
+  <style>
+    .admin-wrap { max-width: 720px; }
+    .file-list { margin-top: 1rem; }
+    .file-row {
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+      padding: .75rem; border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: .5rem; background: var(--bg);
+    }
+    .file-name { flex: 1; min-width: 120px; word-break: break-all; font-size: .9rem; }
+    .file-meta { font-size: .8rem; color: var(--muted); }
+    .btn-del { background-color: #dc2626 !important; border-color: #fca5a5 !important; min-width: 80px; min-height: 40px; padding: .4rem .75rem; font-size: .85rem; }
+    .btn-del-all { background-color: #b91c1c !important; margin-top: .75rem; }
+    .stats { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; font-size: .9rem; }
+    .stat { background: var(--bg); padding: .5rem .75rem; border-radius: 8px; border: 1px solid var(--border); }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .login-form { display: flex; flex-direction: column; gap: .6rem; max-width: 320px; margin: 1rem auto; }
+    input[type="password"], input[type="text"] {
+      width: 100%; min-height: 48px; padding: .75rem 1rem; font-size: 16px;
+      border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+    }
+    .back { color: var(--muted); font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <div class="app admin-wrap">
+    <p class="back"><a href="/" style="color:#93c5fd">← Back to downloader</a></p>
+
+    {% if not logged_in %}
+    <header class="header">
+      <h1>Admin Login</h1>
+      <p>Enter access code</p>
+    </header>
+    <section class="panel">
+      <form method="post" class="login-form">
+        {% csrf_token %}
+        <input type="password" name="code" placeholder="Access code" required autofocus>
+        <button type="submit" class="btn primary full">Login</button>
+      </form>
+      {% if error %}<p class="alert error">{{ error }}</p>{% endif %}
+    </section>
+
+    {% else %}
+    <div class="top-bar">
+      <header class="header" style="margin:0;text-align:left">
+        <h1>Server Files</h1>
+      </header>
+      <form method="post" action="{% url 'admin_logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn sm" style="background-color:#475569!important;border-color:#94a3b8!important">Logout</button>
+      </form>
+    </div>
+
+    <section class="panel">
+      <div class="stats">
+        <span class="stat"><strong>{{ count }}</strong> files</span>
+        <span class="stat"><strong>{{ total_mb }}</strong> MB used</span>
+      </div>
+
+      {% if files %}
+      <div class="file-list" id="file-list">
+        {% for f in files %}
+        <div class="file-row" data-name="{{ f.name }}">
+          <div class="file-name">{{ f.name }}</div>
+          <div class="file-meta">{{ f.size_mb }} MB · {{ f.modified }}</div>
+          <button class="btn btn-del sm" onclick="delFile('{{ f.name|escapejs }}')">Delete</button>
+        </div>
+        {% endfor %}
+      </div>
+      <button class="btn btn-del btn-del-all full" onclick="delAll()">Delete All Files</button>
+      {% else %}
+      <p class="hint">No files on server.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+  </div>
+
+  {% if logged_in %}
+  <script>
+    function getCookie(n) {
+      const v = document.cookie.match('(^|;)\\s*' + n + '\\s*=\\s*([^;]+)');
+      return v ? v.pop() : '';
+    }
+    async function delFile(name) {
+      if (!confirm('Delete ' + name + '?')) return;
+      const r = await fetch('/admin/delete/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+        body: JSON.stringify({ name }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'Failed'); return; }
+      document.querySelector('[data-name="' + name.replace(/"/g, '\\"') + '"]')?.remove();
+      location.reload();
+    }
+    async function delAll() {
+      if (!confirm('Delete ALL files?')) return;
+      const r = await fetch('/admin/delete-all/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': getCookie('csrftoken') },
+      });
+      if (r.ok) location.reload();
+      else alert('Failed');
+    }
+  </script>
+  {% endif %}
+</body>
+</html>
