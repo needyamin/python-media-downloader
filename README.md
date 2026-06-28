@@ -58,9 +58,18 @@ ingress:
 
 Verify:
 ```bash
-curl http://127.0.0.1:8092
+chmod +x check.sh
+./check.sh
+curl -H "Host: download.needyamin.site" http://127.0.0.1:8092/
 systemctl status downloader
+systemctl status cloudflared   # must be running for tunnel
 ```
+
+**502 Bad Gateway?**
+1. App must respond: `curl -H "Host: download.needyamin.site" http://127.0.0.1:8092/` → HTML page
+2. `cloudflared` must run on same server: `systemctl status cloudflared`
+3. Tunnel ingress: `service: http://127.0.0.1:8092`
+4. After `git pull`: `chmod +x setup.sh start.sh && sudo ./setup.sh`
 
 ## Setup (local)
 

@@ -7,7 +7,7 @@ chmod +x setup.sh start.sh 2>/dev/null || true
 
 DOMAIN="${DOMAIN:-download.needyamin.site}"
 PORT="${PORT:-8092}"
-BIND="${BIND:-127.0.0.1}"
+BIND="${BIND:-0.0.0.0}"
 
 echo "=== Media Downloader Setup ==="
 echo "Domain: $DOMAIN | Port: $BIND:$PORT (Cloudflare tunnel)"

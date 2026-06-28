@@ -15,6 +15,6 @@ if [ -f ".env" ]; then
   set +a
 fi
 
-BIND=${BIND:-127.0.0.1}
+BIND=${BIND:-0.0.0.0}
 PORT=${PORT:-8092}
 exec gunicorn config.wsgi:application --bind "${BIND}:${PORT}" --workers 2 --timeout 300
