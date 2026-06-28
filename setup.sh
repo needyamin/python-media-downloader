@@ -110,9 +110,10 @@ EOF
   echo "Tunnel target: http://$BIND:$PORT"
 }
 
-echo "[6/7] Skipping systemd (run as root for auto-start)."
 if command -v systemctl &>/dev/null && [ "$(id -u)" = "0" ]; then
   install_systemd
+else
+  echo "[6/7] Skipping systemd — run: sudo ./setup.sh"
 fi
 
 echo "[7/7] Done."

@@ -54,6 +54,14 @@ ingress:
     service: http://localhost:8092
 ```
 
+**CloudPanel:** Sites → download.needyamin.site → **Python Settings** → **App Port** = `8092` → Save.
+
+Verify:
+```bash
+curl http://127.0.0.1:8092
+systemctl status downloader
+```
+
 ## Setup (local)
 
 1. Paste a URL
